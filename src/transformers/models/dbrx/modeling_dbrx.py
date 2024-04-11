@@ -33,6 +33,7 @@ from ...utils import (
     is_flash_attn_greater_or_equal_2_10,
     logging,
 )
+from ...utils.import_utils import is_megablocks_available
 from .configuration_dbrx import DbrxConfig
 
 
@@ -43,6 +44,10 @@ if is_flash_attn_2_available():
         pad_input,  # noqa
         unpad_input,
     )
+
+if is_megablocks_available():
+    from megablocks.layers.dmoe import ParallelDroplessMLP
+    from megablocks.layers.arguments import Arguments
 
 logger = logging.get_logger(__name__)
 
@@ -754,9 +759,13 @@ class DbrxExpertGLU(nn.Module):
         self.activation_fn = ACT2FN[act_fn_name]
 
     def forward(self, x: torch.Tensor, expert_idx: int) -> torch.Tensor:
-        expert_w1 = self.w1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx]
-        expert_v1 = self.v1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx]
-        expert_w2 = self.w2.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx]
+        with torch.no_grad():
+            expert_w1 = self.w1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx]
+            expert_v1 = self.v1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx]
+            expert_w2 = self.w2.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx]
+        expert_w1.requires_grad = True
+        expert_v1.requires_grad = True
+        expert_w2.requires_grad = True
 
         gate_proj = x.matmul(expert_w1.t())
         up_proj = x.matmul(expert_v1.t())
@@ -815,12 +824,26 @@ class DbrxFFN(nn.Module):
             moe_normalize_expert_weights=ffn_config.moe_normalize_expert_weights,
         )
 
-        self.experts = DbrxExperts(
-            hidden_size=config.d_model,
-            ffn_hidden_size=ffn_config.ffn_hidden_size,
-            moe_num_experts=ffn_config.moe_num_experts,
-            ffn_act_fn=ffn_config.ffn_act_fn,
-        )
+        if is_megablocks_available() and False:
+            self.experts = ParallelDroplessMLP(Arguments(
+                hidden_size=config.d_model,
+                ffn_hidden_size=ffn_config.ffn_hidden_size,
+                bias=False,
+                moe_num_experts=ffn_config.moe_num_experts,
+                moe_top_k=4,
+                moe_normalize_expert_weights=1,
+                mlp_type='glu',
+                mlp_impl='grouped',
+                fp16=False,
+                bf16=False,
+            ))
+        else:
+            self.experts = DbrxExperts(
+                hidden_size=config.d_model,
+                ffn_hidden_size=ffn_config.ffn_hidden_size,
+                moe_num_experts=ffn_config.moe_num_experts,
+                ffn_act_fn=ffn_config.ffn_act_fn,   
+            )
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         weights, top_weights, top_experts = self.router(x)

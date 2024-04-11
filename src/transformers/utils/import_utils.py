@@ -362,6 +362,16 @@ def is_causal_conv1d_available():
     return False
 
 
+def is_megablocks_available():
+    if is_torch_available():
+        import torch
+
+        if not torch.cuda.is_available():
+            return False
+        return _is_package_available("megablocks")
+    return False
+
+
 def is_torch_mps_available():
     if is_torch_available():
         import torch
