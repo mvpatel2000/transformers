@@ -948,9 +948,9 @@ class DbrxPreTrainedModel(PreTrainedModel):
                 module.bias.data.zero_()
         elif isinstance(module, DbrxExpertGLU):
             for i in range(16):
-                module.w1[i].data.normal_(mean=0.0, std=std)
-                module.v1[i].data.normal_(mean=0.0, std=std)
-                module.w2[i].data.normal_(mean=0.0, std=std)
+                module.w1[i].weight.data.normal_(mean=0.0, std=std)
+                module.v1[i].weight.data.normal_(mean=0.0, std=std)
+                module.w2[i].weight.data.normal_(mean=0.0, std=std)
 
     def _setup_cache(
         self, cache_cls: Any, max_batch_size: int, max_cache_len: int
