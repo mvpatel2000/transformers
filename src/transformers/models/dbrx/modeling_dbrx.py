@@ -744,9 +744,12 @@ class DbrxExpertGLU(nn.Module):
         self.ffn_hidden_size = ffn_hidden_size
         self.moe_num_experts = moe_num_experts
 
-        self.w1 = nn.Parameter(torch.empty(moe_num_experts * ffn_hidden_size, hidden_size))
-        self.v1 = nn.Parameter(torch.empty(moe_num_experts * ffn_hidden_size, hidden_size))
-        self.w2 = nn.Parameter(torch.empty(moe_num_experts * ffn_hidden_size, hidden_size))
+        # self.w1 = nn.Parameter(torch.empty(moe_num_experts * ffn_hidden_size, hidden_size))
+        # self.v1 = nn.Parameter(torch.empty(moe_num_experts * ffn_hidden_size, hidden_size))
+        # self.w2 = nn.Parameter(torch.empty(moe_num_experts * ffn_hidden_size, hidden_size))
+        self.w1 = [nn.Linear(hidden_size, ffn_hidden_size, bias=False) for _ in range(moe_num_experts)]
+        self.v1 = [nn.Linear(hidden_size, ffn_hidden_size, bias=False) for _ in range(moe_num_experts)]
+        self.w2 = [nn.Linear(ffn_hidden_size, hidden_size, bias=False) for _ in range(moe_num_experts)]
 
         act_fn_name = ffn_act_fn.pop("name", "silu")
         if len(ffn_act_fn) != 0:
@@ -755,23 +758,22 @@ class DbrxExpertGLU(nn.Module):
 
     def forward(self, x: torch.Tensor, expert_idx: int) -> torch.Tensor:
         # Slice in no grad context to avoid storing the entire param in backward pass
-        # with torch.no_grad():
-        #     expert_w1 = self.w1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx]
-        #     expert_v1 = self.v1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx]
-        #     expert_w2 = self.w2.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx]
-        expert_w1 = self.w1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx].detach()
-        expert_v1 = self.v1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx].detach()
-        expert_w2 = self.w2.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx].detach()
-        expert_w1.requires_grad = self.w1.requires_grad
-        expert_v1.requires_grad = self.v1.requires_grad
-        expert_w2.requires_grad = self.w2.requires_grad
+        # expert_w1 = self.w1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx].detach()
+        # expert_v1 = self.v1.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx].detach()
+        # expert_w2 = self.w2.view(self.moe_num_experts, self.ffn_hidden_size, self.hidden_size)[expert_idx].detach()
+        # expert_w1.requires_grad = self.w1.requires_grad
+        # expert_v1.requires_grad = self.v1.requires_grad
+        # expert_w2.requires_grad = self.w2.requires_grad
+        expert_w1 = self.w1[expert_idx](x)
+        expert_v1 = self.v1[expert_idx](x)
+        return self.w2[expert_idx](self.activation_fn(expert_w1) * expert_v1)
 
-        gate_proj = x.matmul(expert_w1.t())
-        up_proj = x.matmul(expert_v1.t())
-        gate_proj = self.activation_fn(gate_proj)
-        intermediate_states = gate_proj * up_proj
-        down_proj = intermediate_states.matmul(expert_w2)
-        return down_proj
+        # gate_proj = x.matmul(expert_w1.t())
+        # up_proj = x.matmul(expert_v1.t())
+        # gate_proj = self.activation_fn(gate_proj)
+        # intermediate_states = gate_proj * up_proj
+        # down_proj = intermediate_states.matmul(expert_w2)
+        # return down_proj
 
 
 class DbrxExperts(nn.Module):
