@@ -988,6 +988,7 @@ class DbrxModel(DbrxPreTrainedModel):
         self.emb_pdrop = config.emb_pdrop
 
         self.wte = nn.Embedding(config.vocab_size, config.d_model, self.padding_idx)
+        config.n_layers = 4
         self.blocks = nn.ModuleList([DbrxBlock(config, block_idx) for block_idx in range(config.n_layers)])
         self.norm_f = nn.LayerNorm(config.d_model, bias=False)
         self.gradient_checkpointing = False
